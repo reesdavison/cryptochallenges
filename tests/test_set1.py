@@ -146,6 +146,4 @@ def test_single_byte_order_cipher():
     for char, message in messages.items():
         print(f"{char} :: {scores[char]} :: {message}")
 
-    breakpoint()
-
     # ETAOIN SHRDLU
