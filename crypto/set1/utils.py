@@ -27,7 +27,15 @@ def repeat_char_bytes(char: str, length: int) -> bytes:
 
 def repeat_key_bytes(key: str, length: int) -> bytes:
     key_length = len(key)
-    # for
+    remainder = length % key_length
+    multiples = length // key_length
+    return b"".join([key.encode()] * multiples) + key[:remainder].encode()
+
+
+def repeat_key_xor(key: str, message: str) -> bytes:
+    bytes_message = message.encode()
+    key = repeat_key_bytes(key, len(bytes_message))
+    return xor_bytes(key, bytes_message)
 
 
 ALL_HEX_CHARS = [str(i) for i in range(10)] + ["a", "b", "c", "d", "e", "f"]
@@ -193,8 +201,7 @@ def check_many_ciphers(cipher_list: t.List[str]):
     results_list = []
     for i, cipher_str in enumerate(cipher_list):
         cipher_bytes = bytes.fromhex(cipher_str)
-        # results: t.List[ResultType] = top_n_results(cipher_bytes, 15)
-        _, _, results = try_single_char_ciphers(cipher_bytes)
+        results: t.List[ResultType] = top_n_results(cipher_bytes, 5)
         results_list.extend(
             [
                 CipherResultItem(

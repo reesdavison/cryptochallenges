@@ -3,6 +3,8 @@ import pytest
 from crypto.set1.utils import (
     check_many_ciphers,
     hex_to_b64,
+    repeat_key_bytes,
+    repeat_key_xor,
     top_n_results,
     xor_bytes,
     try_single_char_ciphers,
@@ -185,8 +187,20 @@ def test_list_of_cipher_str():
     )
 
 
+def test_repeat_key_bytes():
+    key = "ICE"
+    # 73, 67, 69
+    assert repeat_key_bytes(key, 9) == "ICEICEICE".encode()
+    assert repeat_key_bytes(key, 2) == "IC".encode()
+    assert repeat_key_bytes(key, 5) == "ICEIC".encode()
+
+
 # Challenge 5
 def test_repeating_key_xor():
     message = (
-        "Burning 'em, if you ain't quick and nimble I go crazy when I hear a cymbal"
+        "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal"
     )
+    key = "ICE"
+    cipher_bytes = repeat_key_xor(key, message)
+    correct_hex = "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"
+    assert correct_hex == cipher_bytes.hex()
