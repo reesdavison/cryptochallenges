@@ -4,13 +4,15 @@ from crypto.set1.utils import (
     check_many_ciphers,
     hex_to_b64,
     repeat_key_bytes,
-    repeat_key_xor,
+    encrypt_repeat_key_xor,
+    decrypt_repeat_key_xor,
     top_n_results,
     xor_bytes,
     try_single_char_ciphers,
     hamming_char,
     repeat_char_bytes,
     english_language_distance,
+    hamming_dist,
 )
 
 # Notes on hexadecimal
@@ -201,6 +203,23 @@ def test_repeating_key_xor():
         "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal"
     )
     key = "ICE"
-    cipher_bytes = repeat_key_xor(key, message)
+    cipher_bytes = encrypt_repeat_key_xor(key, message)
     correct_hex = "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"
     assert correct_hex == cipher_bytes.hex()
+
+
+def test_repeating_key_xor_encrypt_decrypt():
+    message = "I'm writing my super secret message"
+    key = "my-password"
+    cipher_bytes = encrypt_repeat_key_xor(key, message)
+    cipher_hex = cipher_bytes.hex()
+    print(cipher_hex)
+    decrypt_message = decrypt_repeat_key_xor(key, cipher_bytes)
+    assert decrypt_message == message
+
+
+def test_hamming_distance():
+    str1 = "this is a test"
+    str2 = "wokka wokka!!!"
+    dist = hamming_dist(str1.encode(), str2.encode())
+    assert dist == 37

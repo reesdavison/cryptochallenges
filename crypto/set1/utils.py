@@ -32,10 +32,15 @@ def repeat_key_bytes(key: str, length: int) -> bytes:
     return b"".join([key.encode()] * multiples) + key[:remainder].encode()
 
 
-def repeat_key_xor(key: str, message: str) -> bytes:
+def encrypt_repeat_key_xor(key: str, message: str) -> bytes:
     bytes_message = message.encode()
-    key = repeat_key_bytes(key, len(bytes_message))
-    return xor_bytes(key, bytes_message)
+    repeat_key = repeat_key_bytes(key, len(bytes_message))
+    return xor_bytes(repeat_key, bytes_message)
+
+
+def decrypt_repeat_key_xor(key: str, cipher: bytes) -> str:
+    repeat_key = repeat_key_bytes(key, len(cipher))
+    return xor_bytes(repeat_key, cipher).decode()
 
 
 ALL_HEX_CHARS = [str(i) for i in range(10)] + ["a", "b", "c", "d", "e", "f"]
@@ -215,3 +220,19 @@ def check_many_ciphers(cipher_list: t.List[str]):
             ]
         )
     return sorted(results_list, key=lambda res: res.distance)
+
+
+def hamming_dist(str1: bytes, str2: bytes) -> int:
+    """Assume same length for now"""
+    assert len(str1) == len(str2)
+    # A B = Y
+    # 0 0 = 0
+    # 1 1 = 0
+    # 0 1 = 1
+    # 1 0 = 1
+    # again this is just an XOR, so if we xor and then count
+    # the ones in binary we good.
+    xored = xor_bytes(str1, str2)
+    as_int = int.from_bytes(xored, byteorder="big")
+    as_binary_str = bin(as_int)[2:]
+    return sum(val == "1" for val in as_binary_str)
