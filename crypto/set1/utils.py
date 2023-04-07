@@ -236,3 +236,46 @@ def hamming_dist(str1: bytes, str2: bytes) -> int:
     as_int = int.from_bytes(xored, byteorder="big")
     as_binary_str = bin(as_int)[2:]
     return sum(val == "1" for val in as_binary_str)
+
+
+@dataclass
+class EditDistResult:
+    key_size: int
+    dist: float
+
+
+def norm_edit_distance(cipher: bytes, key_size: int, starting_points: t.List[int]):
+    results = []
+    for start in starting_points:
+        results.append(
+            hamming_dist(
+                cipher[start : start + key_size],
+                cipher[start + key_size : start + key_size * 2],
+            )
+            / key_size
+        )
+    return sum(results) / len(results)
+
+
+def decrypt_cipher_bytes(cipher: bytes) -> None:
+    """
+    1. For each KEYSIZE, take the first KEYSIZE worth of bytes, and the second KEYSIZE worth of bytes, and find the edit distance between them. Normalize this result by dividing by KEYSIZE.
+    2. The KEYSIZE with the smallest normalized edit distance is probably the key. You could proceed perhaps with the smallest 2-3 KEYSIZE values. Or take 4 KEYSIZE blocks instead of 2 and average the distances.
+    3. Now that you probably know the KEYSIZE: break the ciphertext into blocks of KEYSIZE length.
+    4. Now transpose the blocks: make a block that is the first byte of every block, and a block that is the second byte of every block, and so on.
+    5. Solve each block as if it was single-character XOR. You already have code to do this.
+    6. For each block, the single-byte XOR key that produces the best looking histogram is the repeating-key XOR key byte for that block. Put them together and you have the key.
+    """
+
+    results = []
+    for key_size in range(2, 41):
+        edit_distance = norm_edit_distance(cipher, key_size, [0, 50, 100, 150, 200])
+        # edit_distance = (
+        #     hamming_dist(cipher[:key_size], cipher[key_size : key_size * 2]) / key_size
+        # )
+        results.append(EditDistResult(key_size=key_size, dist=edit_distance))
+
+    sorted_results = sorted(results, key=lambda res: res.dist)
+
+    # equals 5 in this case
+    # correct_key_size = sorted_results[0].key_size

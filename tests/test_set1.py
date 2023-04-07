@@ -1,4 +1,5 @@
 import pytest
+import base64
 
 from crypto.set1.utils import (
     check_many_ciphers,
@@ -13,6 +14,7 @@ from crypto.set1.utils import (
     repeat_char_bytes,
     english_language_distance,
     hamming_dist,
+    decrypt_cipher_bytes,
 )
 
 # Notes on hexadecimal
@@ -223,3 +225,12 @@ def test_hamming_distance():
     str2 = "wokka wokka!!!"
     dist = hamming_dist(str1.encode(), str2.encode())
     assert dist == 37
+
+
+# Challenge 6
+def test_decrypt_file_repeating_key_xor():
+    with open("tests/fixtures/challenge_6_encrypted.txt", "r") as fp:
+        ciphertext_64 = fp.read()
+
+    cipher_bytes = base64.b64decode(ciphertext_64)
+    decrypt_cipher_bytes(cipher_bytes)
