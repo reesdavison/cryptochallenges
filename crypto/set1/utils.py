@@ -1,5 +1,7 @@
 import base64
+import typing as t
 
+from dataclasses import dataclass
 from collections import defaultdict
 
 
@@ -17,6 +19,15 @@ def xor_bytes(bytes1: bytes, bytes2: bytes) -> bytes:
     integer3 = integer1 ^ integer2
     # length b3_len is number of bytes
     return int.to_bytes(integer3, b3_len, byteorder="big")
+
+
+def repeat_char_bytes(char: str, length: int) -> bytes:
+    return b"".join([char.encode()] * length)
+
+
+def repeat_key_bytes(key: str, length: int) -> bytes:
+    key_length = len(key)
+    # for
 
 
 ALL_HEX_CHARS = [str(i) for i in range(10)] + ["a", "b", "c", "d", "e", "f"]
@@ -103,6 +114,9 @@ def english_language_distance(as_str: str) -> float:
             count_dict[letter] += 1
             total_count += 1
 
+    if len(count_dict) == 0:
+        return 1.0
+
     # lets use L1 distance
     score = sum(
         [
@@ -113,23 +127,84 @@ def english_language_distance(as_str: str) -> float:
     return score
 
 
-def repeat_char_bytes(char: str, length: int) -> bytes:
-    return b"".join([char.encode()] * length)
+@dataclass
+class ResultType:
+    message: str
+    distance: float
+    key: str
 
 
-def try_single_char_ciphers(cipher_bytes: bytes):
-    scores = {}
+def try_single_char_ciphers(
+    cipher_bytes: bytes,
+) -> t.Tuple[str, float, t.List[ResultType]]:
     min_score = 2
     min_char = None
-    messages = {}
-    for char in freq_dict_norm.keys():
+
+    results = []
+    for i in range(255):
+        char = chr(i)
         repeated_key_bytes = repeat_char_bytes(char, len(cipher_bytes))
         xored_bytes = xor_bytes(cipher_bytes, repeated_key_bytes)
-        xored_str = xored_bytes.decode()
-        scores[char] = english_language_distance(xored_str)
-        messages[char] = xored_str
-        if scores[char] < min_score:
-            min_score = scores[char]
+        try:
+            xored_str = xored_bytes.decode()
+        except UnicodeDecodeError:
+            continue
+        score = english_language_distance(xored_str)
+        results.append(
+            ResultType(
+                message=xored_str,
+                distance=score,
+                key=char,
+            )
+        )
+        if score < min_score:
+            min_score = score
             min_char = char
 
-    return min_char, min_score, messages, scores
+    return min_char, min_score, results
+
+
+def top_n_results(cipher_bytes: bytes, n: int) -> t.List[ResultType]:
+    _, _, results = try_single_char_ciphers(cipher_bytes)
+    sorted_results = sorted(results, key=lambda x: x.distance)
+    k = min(n, len(sorted_results))
+    return sorted_results[:k]
+
+
+@dataclass
+class CipherResult:
+    i: int
+    cipher_str: str
+    top_5_results: t.List[ResultType]
+
+
+@dataclass
+class CipherResultItem:
+    i: int
+    cipher_str: str
+    message: str
+    distance: float
+    key: str
+
+
+def check_many_ciphers(cipher_list: t.List[str]):
+    """Reads in as list of hex encoded strings"""
+
+    results_list = []
+    for i, cipher_str in enumerate(cipher_list):
+        cipher_bytes = bytes.fromhex(cipher_str)
+        # results: t.List[ResultType] = top_n_results(cipher_bytes, 15)
+        _, _, results = try_single_char_ciphers(cipher_bytes)
+        results_list.extend(
+            [
+                CipherResultItem(
+                    i=i,
+                    cipher_str=cipher_str,
+                    message=res.message,
+                    distance=res.distance,
+                    key=res.key,
+                )
+                for res in results
+            ]
+        )
+    return sorted(results_list, key=lambda res: res.distance)

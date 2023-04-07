@@ -2,7 +2,4 @@
 
 from distutils.core import setup
 
-setup(
-    name="crypto",
-    version="0.0.0",
-)
+setup(name="crypto", version="0.0.0")

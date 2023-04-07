@@ -1,12 +1,14 @@
 import pytest
 
 from crypto.set1.utils import (
+    check_many_ciphers,
     hex_to_b64,
+    top_n_results,
     xor_bytes,
     try_single_char_ciphers,
     hamming_char,
-    english_language_distance,
     repeat_char_bytes,
+    english_language_distance,
 )
 
 # Notes on hexadecimal
@@ -135,15 +137,56 @@ def test_english_language_score():
     assert small_distance < large_distance
 
 
+def test_english_language_score_with_nonsense():
+    bad_message = "\x1844025<{\x16\x18|({720>{:{+4.5?{4={9:845"
+    bad_dist = english_language_distance(bad_message)
+    assert bad_dist == 1
+
+
 # Challenge 3
 def test_single_byte_order_cipher():
     cipher_hex = "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"
 
     cipher_bytes = bytes.fromhex(cipher_hex)
+    results = top_n_results(cipher_bytes, 10)
 
-    _, _, messages, scores = try_single_char_ciphers(cipher_bytes)
+    for res in results:
+        print(f"{res.key} :: {res.distance} :: {res.message}")
 
-    for char, message in messages.items():
-        print(f"{char} :: {scores[char]} :: {message}")
-
+    correct_message = "Cooking MC's like a pound of bacon"
+    correct_key = "X"
+    assert any(
+        [res.message == correct_message and res.key == correct_key for res in results]
+    )
     # ETAOIN SHRDLU
+
+
+# Challenge 4
+def test_list_of_cipher_str():
+
+    with open("tests/fixtures/challenge_4_codes.txt", "r") as fp:
+        cipher_list = fp.readlines()
+
+    cipher_list_stripped = [item.strip("\n") for item in cipher_list]
+    results = check_many_ciphers(cipher_list_stripped)
+    for res in results[:30]:
+        print(f"{res.i} :: {res.key} :: {res.distance} :: {res.message}")
+
+    correct_message = "Now that the party is jumping\n"
+    correct_key = "5"
+    correct_i = 170
+    assert any(
+        [
+            res.message == correct_message
+            and res.key == correct_key
+            and res.i == correct_i
+            for res in results
+        ]
+    )
+
+
+# Challenge 5
+def test_repeating_key_xor():
+    message = (
+        "Burning 'em, if you ain't quick and nimble I go crazy when I hear a cymbal"
+    )
