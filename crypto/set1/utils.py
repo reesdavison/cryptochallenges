@@ -3,6 +3,7 @@ import typing as t
 
 from dataclasses import dataclass
 from collections import defaultdict
+from itertools import product
 
 
 def hex_to_b64(hex: str) -> str:
@@ -114,9 +115,15 @@ freq_dict_percent = {
     "X": 0.15,
     "Y": 2,
     "Z": 0.074,
+    " ": 26,
+    "__punct__": 8.5,
 }
 
-freq_dict_norm = {key.lower(): val / 100 for key, val in freq_dict_percent.items()}
+sum_count = sum([val for val in freq_dict_percent.values()])
+freq_dict_norm = {
+    key.lower(): val / sum_count for key, val in freq_dict_percent.items()
+}
+other_chars = [chr(i) for i in range(33, 65)]
 
 
 def english_language_distance(as_str: str) -> float:
@@ -125,6 +132,9 @@ def english_language_distance(as_str: str) -> float:
     for letter in as_str.lower():
         if letter in freq_dict_norm:
             count_dict[letter] += 1
+            total_count += 1
+        elif letter in other_chars:
+            count_dict["__punct__"] += 1
             total_count += 1
 
     if len(count_dict) == 0:
@@ -138,6 +148,10 @@ def english_language_distance(as_str: str) -> float:
         ]
     )
     return score
+
+
+# def english_language_distance2(as_str: str) -> float:
+#     char_list = " etaoinshrdlcumwfgypbvkjxqz"
 
 
 @dataclass
@@ -238,23 +252,57 @@ def hamming_dist(str1: bytes, str2: bytes) -> int:
     return sum(val == "1" for val in as_binary_str)
 
 
+def norm_hamming_dist(str1: bytes, str2: bytes) -> float:
+    """Hamming distance divided by number of bits to 
+    return value in range [0, 1]
+    """
+    return hamming_dist(str1, str2) / (len(str1) * 8)
+
+
 @dataclass
 class EditDistResult:
     key_size: int
     dist: float
 
 
-def norm_edit_distance(cipher: bytes, key_size: int, starting_points: t.List[int]):
-    results = []
-    for start in starting_points:
-        results.append(
-            hamming_dist(
-                cipher[start : start + key_size],
-                cipher[start + key_size : start + key_size * 2],
-            )
-            / key_size
-        )
-    return sum(results) / len(results)
+def blocks(cipher: bytes, key_size: int) -> t.Generator[bytes, None, None]:
+    """Return cipher split into blocks. Do not"""
+    cipher_len = len(cipher)
+    i = 0
+    while i + key_size < cipher_len:
+        yield cipher[i : i + key_size]
+        i += key_size
+
+
+def norm_edit_distance(cipher: bytes, key_size: int):
+    count = 0
+    dist = 0
+    for block in blocks(cipher, key_size):
+        dist += norm_hamming_dist(cipher[: key_size], block)
+        dist += norm_hamming_dist(cipher[key_size: key_size * 2], block)
+        count += 2
+    norm_dist = dist / count
+    return norm_dist
+
+
+def transposed_block(cipher: bytes, key_size: int) -> t.Generator[bytes, None, None]:
+    for i in range(key_size):
+        pos = i
+        block_parts = []
+        while pos < len(cipher):
+            cipher_int = cipher[pos]
+            byte_part = int.to_bytes(cipher_int, 1, byteorder="big")
+            block_parts.append(byte_part)
+            pos += key_size
+        yield b"".join(block_parts)
+
+
+def get_repeat_blocks(block: bytes) -> t.List[bytes]:
+    key_size = len(block)
+    rblocks = []
+    for i in range(key_size):
+        rblocks.append(int.to_bytes(block[i], 1, byteorder="big") * key_size)
+    return rblocks
 
 
 def decrypt_cipher_bytes(cipher: bytes) -> None:
@@ -269,13 +317,30 @@ def decrypt_cipher_bytes(cipher: bytes) -> None:
 
     results = []
     for key_size in range(2, 41):
-        edit_distance = norm_edit_distance(cipher, key_size, [0, 50, 100, 150, 200])
-        # edit_distance = (
-        #     hamming_dist(cipher[:key_size], cipher[key_size : key_size * 2]) / key_size
-        # )
+        edit_distance = norm_edit_distance(cipher, key_size)
         results.append(EditDistResult(key_size=key_size, dist=edit_distance))
 
-    sorted_results = sorted(results, key=lambda res: res.dist)
+    key_results = sorted(results, key=lambda res: res.dist)
 
-    # equals 5 in this case
-    # correct_key_size = sorted_results[0].key_size
+    get_key = lambda res: res.key
+    get_key_size = lambda res: res.key_size
+    all_results = []
+    for key_size in map(get_key_size, key_results[0:1]): # Just use the first
+        potential_key_parts = []
+        for i, block in enumerate(transposed_block(cipher, key_size)):
+            block_results: t.List[ResultType] = top_n_results(block, 1)
+            potential_key_parts.append(list(map(get_key, block_results)))
+
+        for key_parts in product(*potential_key_parts):
+            full_key = "".join(key_parts)
+            message = decrypt_repeat_key_xor(full_key, cipher)
+            dist = english_language_distance(message)
+            all_results.append(
+                ResultType(
+                    message=message,
+                    distance=dist,
+                    key=full_key,
+                )
+            )
+    sorted_results = sorted(all_results, key=lambda res: res.distance)
+    return sorted_results

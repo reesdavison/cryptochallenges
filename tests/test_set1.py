@@ -2,12 +2,16 @@ import pytest
 import base64
 
 from crypto.set1.utils import (
+    blocks,
     check_many_ciphers,
+    get_repeat_blocks,
     hex_to_b64,
+    norm_edit_distance,
     repeat_key_bytes,
     encrypt_repeat_key_xor,
     decrypt_repeat_key_xor,
     top_n_results,
+    transposed_block,
     xor_bytes,
     try_single_char_ciphers,
     hamming_char,
@@ -146,7 +150,7 @@ def test_english_language_score():
 def test_english_language_score_with_nonsense():
     bad_message = "\x1844025<{\x16\x18|({720>{:{+4.5?{4={9:845"
     bad_dist = english_language_distance(bad_message)
-    assert bad_dist == 1
+    assert bad_dist > 0.9
 
 
 # Challenge 3
@@ -227,10 +231,101 @@ def test_hamming_distance():
     assert dist == 37
 
 
+def test_norm_edit_distance():
+    str1 = "this is a test"
+    str2 = "wokka wokka!!!"
+
+    _str = str1 + str2
+    dist = norm_edit_distance(_str.encode(), key_size=len(str1), starting_points=[0])
+    assert dist <= 1.0
+    assert int(dist * 14 * 8) == 37
+
+
+def test_blocks():
+    cipher = "this is a test".encode()
+    exp_blocks = ["this ", "is a ", "test"]
+    for i, block in enumerate(blocks(cipher, 5)):
+        assert block == exp_blocks[i].encode()
+
+
+def test_blocks_no_remainder():
+    cipher = "this is a test2".encode()
+    exp_blocks = ["this ", "is a ", "test2"]
+    for i, block in enumerate(blocks(cipher, 5)):
+        assert block == exp_blocks[i].encode()
+
+
+def test_blocks_empty():
+    cipher = "".encode()
+    exp_blocks = []
+    for i, block in enumerate(blocks(cipher, 5)):
+        assert block == exp_blocks[i].encode()
+
+
+def test_repeat_blocks():
+    block = "this ".encode()
+    rblocks = get_repeat_blocks(block)
+    assert rblocks == [
+        "ttttt".encode(),
+        "hhhhh".encode(),
+        "iiiii".encode(),
+        "sssss".encode(),
+        "     ".encode(),
+    ]
+
+
+def test_transposed_block():
+    cipher = "abababab".encode()
+    key_size = 2
+    blocks = []
+    for block in transposed_block(cipher, key_size):
+        blocks.append(block)
+    assert blocks == [
+        "aaaa".encode(),
+        "bbbb".encode(),
+    ]
+
+
+def test_transposed_block2():
+    cipher = "abcdefghijklmnop".encode()
+    key_size = 3
+    blocks = [block for block in transposed_block(cipher, key_size)]
+    assert blocks == [
+        "adgjmp".encode(),
+        "behkn".encode(),
+        "cfilo".encode(),
+    ]
+
+
 # Challenge 6
 def test_decrypt_file_repeating_key_xor():
+    """Understanding why the smallest hamming distance 
+    gave me the block size.
+
+    From https://crypto.stackexchange.com/questions/8115/repeating-key-xor-and-hamming-distance
+    The ciphertext consists of X ^ K and Y ^ K
+    where k is the key and X and Y are some english language
+
+    hamming distance is again just xor so, using rules of xor
+    (X ^ K) ^ (Y ^ K) == (X ^ Y) ^ (K ^ K) == (X ^ Y) ^ 0 == X ^ Y
+
+    therefore if we pick K correctly the above holds true, we get the equivalent
+    score of xoring 2 english language sections which are likely to produce
+    a lower hamming distance than 2 randomly distributed sets of bytes.
+    
+    Second part involves understanding why using the transposed_block 
+    method and solving each block independently worked.
+    """
     with open("tests/fixtures/challenge_6_encrypted.txt", "r") as fp:
         ciphertext_64 = fp.read()
 
-    cipher_bytes = base64.b64decode(ciphertext_64)
-    decrypt_cipher_bytes(cipher_bytes)
+    cipher_bytes = base64.b64decode(ciphertext_64)  # .replace("\n", ""))
+    sorted_results = decrypt_cipher_bytes(cipher_bytes)
+    assert len(sorted_results) == 1
+    result = sorted_results[0]
+    assert result.key == "TermiNator X: Bring the noise"
+    assert (
+        result.message
+        == "I'm bAck and I'm ringin' the bell *A rockin' on the mike while The fly girls yell \nIn ecstasY in the back of me \nWell thaT's my DJ Deshay cuttin' all Them Z's \nHittin' hard and thE girlies goin' crazy \nVanillA's on the mike, man I'm not Lazy. \n\nI'm lettin' my drug kIck in \nIt controls my mouth And I begin \nTo just let it fLow, let my concepts go \nMy pOsse's to the side yellin', GO Vanilla Go! \n\nSmooth 'cause\x00that's the way I will be \nAnD if you don't give a damn, tHen \nWhy you starin' at me \nSO get off 'cause I control thE stage \nThere's no dissin' aLlowed \nI'm in my own phase \nthe girlies sa y they love me\x00and that is ok \nAnd I can daNce better than any kid n' plAy \n\nStage 2 -- Yea the one yA' wanna listen to \nIt's off My head so let the beat play Through \nSo I can funk it up And make it sound good \n1-2-3\x00Yo -- Knock on some wood \nFoR good luck, I like my rhymes\x00atrocious \nSupercalafragilisTicexpialidocious \nI'm an effEct and that you can bet \nI cAn take a fly girl and make hEr wet. \n\nI'm like Samson -- samson to Delilah \nThere's no\x00denyin', You can try to hang\x00\nBut you'll keep tryin' to gEt my style \nOver and over, pRactice makes perfect \nBut noT if you're a loafer. \n\nYou'lL get nowhere, no place, no tIme, no girls \nSoon -- Oh my god, homebody, you probably eAt \nSpaghetti with a spoon! COme on and say it! \n\nVIP. VanIlla Ice yep, yep, I'm comin'\x00hard like a rhino \nIntoxicatIng so you stagger like a winO \nSo punks stop trying and gIrl stop cryin' \nVanilla Ice Is sellin' and you people are\x00buyin' \n'Cause why the freakS are jockin' like Crazy Glue\x00\nMovin' and groovin' trying To sing along \nAll through thE ghetto groovin' this here sOng \nNow you're amazed by the\x00VIP posse. \n\nSteppin' so harD like a German Nazi \nStartleD by the bases hittin' ground\x00\nThere's no trippin' on mine\x0c I'm just gettin' down \nSparKamatic, I'm hangin' tight liKe a fanatic \nYou trapped me Once and I thought that \nYou Might have it \nSo step down aNd lend me your ear \n'89 in mY time! You, '90 is my year. *\nYou're weakenin' fast, YO! And I can tell it \nYour body'S gettin' hot, so, so I can sMell it \nSo don't be mad and Don't be sad \n'Cause the lyriCs belong to ICE, You can calL me Dad \nYou're pitchin' a fIt, so step back and endure \nlet the witch doctor, Ice, do\x00the dance to cure \nSo come uP close and don't be square \nyou wanna battle me -- AnytimE, anywhere \n\nYou thought thaT I was weak, Boy, you're deaD wrong \nSo come on, everybodY and sing this song \n\nSay --\x00Play that funky music Say, gO white boy, go white boy go *play that funky music Go whiTe boy, go white boy, go \nLay\x00down and boogie and play thaT funky music till you die. \n*Play that funky music Come oN, Come on, let me hear \nPlay\x00that funky music white boy yOu say it, say it \nPlay that Funky music A little louder nOw \nPlay that funky music, whIte boy Come on, Come on, ComE on \nPlay that funky music \n"
+    )
+
