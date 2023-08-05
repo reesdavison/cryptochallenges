@@ -1,9 +1,11 @@
 import base64
 import typing as t
-
+from collections import Counter, defaultdict
 from dataclasses import dataclass
-from collections import defaultdict
 from itertools import product
+from math import ceil
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
 def hex_to_b64(hex: str) -> str:
@@ -46,6 +48,7 @@ def decrypt_repeat_key_xor(key: str, cipher: bytes) -> str:
 
 ALL_HEX_CHARS = [str(i) for i in range(10)] + ["a", "b", "c", "d", "e", "f"]
 
+
 # a hex string of 2 chars [0-9, a-f] represents 8 bits or one byte!
 # ff represent 255
 # 00 represents 0
@@ -60,6 +63,7 @@ def get_hex(integer: int):
 
 
 ALL_HEX_STRINGS = [get_hex(i) for i in range(256)]
+
 
 # score character frequency, measure number of times integers equal
 def hamming_char(bytes1: bytes, bytes2: bytes) -> float:
@@ -253,7 +257,7 @@ def hamming_dist(str1: bytes, str2: bytes) -> int:
 
 
 def norm_hamming_dist(str1: bytes, str2: bytes) -> float:
-    """Hamming distance divided by number of bits to 
+    """Hamming distance divided by number of bits to
     return value in range [0, 1]
     """
     return hamming_dist(str1, str2) / (len(str1) * 8)
@@ -278,8 +282,8 @@ def norm_edit_distance(cipher: bytes, key_size: int):
     count = 0
     dist = 0
     for block in blocks(cipher, key_size):
-        dist += norm_hamming_dist(cipher[: key_size], block)
-        dist += norm_hamming_dist(cipher[key_size: key_size * 2], block)
+        dist += norm_hamming_dist(cipher[:key_size], block)
+        dist += norm_hamming_dist(cipher[key_size : key_size * 2], block)
         count += 2
     norm_dist = dist / count
     return norm_dist
@@ -305,6 +309,15 @@ def get_repeat_blocks(block: bytes) -> t.List[bytes]:
     return rblocks
 
 
+def split_bytes_by_length(_bytes: bytes, length: int = 16) -> t.List[bytes]:
+    # length is measured in bytes
+    blocks = []
+    for pos in range(0, len(_bytes), length):
+        final_pos = min(pos + length, len(_bytes))
+        blocks.append(_bytes[pos:final_pos])
+    return blocks
+
+
 def decrypt_cipher_bytes(cipher: bytes) -> None:
     """
     1. For each KEYSIZE, take the first KEYSIZE worth of bytes, and the second KEYSIZE worth of bytes, and find the edit distance between them. Normalize this result by dividing by KEYSIZE.
@@ -325,7 +338,7 @@ def decrypt_cipher_bytes(cipher: bytes) -> None:
     get_key = lambda res: res.key
     get_key_size = lambda res: res.key_size
     all_results = []
-    for key_size in map(get_key_size, key_results[0:1]): # Just use the first
+    for key_size in map(get_key_size, key_results[0:1]):  # Just use the first
         potential_key_parts = []
         for i, block in enumerate(transposed_block(cipher, key_size)):
             block_results: t.List[ResultType] = top_n_results(block, 1)
@@ -344,3 +357,32 @@ def decrypt_cipher_bytes(cipher: bytes) -> None:
             )
     sorted_results = sorted(all_results, key=lambda res: res.distance)
     return sorted_results
+
+
+def decrypt_aes_128_ecb(cipher_text: bytes, key: bytes) -> bytes:
+    cipher = Cipher(algorithms.AES128(key), modes.ECB())
+    decryptor = cipher.decryptor()
+    message = decryptor.update(cipher_text) + decryptor.finalize()
+    return message
+
+
+# because ECB returns the same code for the same 16 byte input
+# if we split the text into 16 bytes and measure repetition...
+# but 16 bytes is 16 characters in ascii. How many sequences of letters
+# are likely to be 16 length long.
+# lets do this first and check our assumption we don't get much of
+# a distribution and this is more complicated.
+# it turns out we do only get 1 result. If the secret is large I
+# suppose its likely there are repetition, but in this case its probably
+# just an easy case.
+def detect_aes_128_ecb(cipher_candidates: t.List[bytes]):
+    potential_ecb_mode = []
+
+    for i, candidate in enumerate(cipher_candidates):
+        blocks = split_bytes_by_length(candidate, 16)
+        counter = Counter(blocks)
+        gt_1 = [val > 1 for val in counter.values()]
+        if any(gt_1):
+            potential_ecb_mode.append(i)
+
+    return potential_ecb_mode

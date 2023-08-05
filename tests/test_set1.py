@@ -1,24 +1,27 @@
-import pytest
 import base64
+
+import pytest
 
 from crypto.set1.utils import (
     blocks,
     check_many_ciphers,
+    decrypt_aes_128_ecb,
+    decrypt_cipher_bytes,
+    decrypt_repeat_key_xor,
+    detect_aes_128_ecb,
+    encrypt_repeat_key_xor,
+    english_language_distance,
     get_repeat_blocks,
+    hamming_char,
+    hamming_dist,
     hex_to_b64,
     norm_edit_distance,
+    repeat_char_bytes,
     repeat_key_bytes,
-    encrypt_repeat_key_xor,
-    decrypt_repeat_key_xor,
     top_n_results,
     transposed_block,
-    xor_bytes,
     try_single_char_ciphers,
-    hamming_char,
-    repeat_char_bytes,
-    english_language_distance,
-    hamming_dist,
-    decrypt_cipher_bytes,
+    xor_bytes,
 )
 
 # Notes on hexadecimal
@@ -173,7 +176,6 @@ def test_single_byte_order_cipher():
 
 # Challenge 4
 def test_list_of_cipher_str():
-
     with open("tests/fixtures/challenge_4_codes.txt", "r") as fp:
         cipher_list = fp.readlines()
 
@@ -299,7 +301,7 @@ def test_transposed_block2():
 
 # Challenge 6
 def test_decrypt_file_repeating_key_xor():
-    """Understanding why the smallest hamming distance 
+    """Understanding why the smallest hamming distance
     gave me the block size.
 
     From https://crypto.stackexchange.com/questions/8115/repeating-key-xor-and-hamming-distance
@@ -312,14 +314,14 @@ def test_decrypt_file_repeating_key_xor():
     therefore if we pick K correctly the above holds true, we get the equivalent
     score of xoring 2 english language sections which are likely to produce
     a lower hamming distance than 2 randomly distributed sets of bytes.
-    
-    Second part involves understanding why using the transposed_block 
+
+    Second part involves understanding why using the transposed_block
     method and solving each block independently worked.
     """
     with open("tests/fixtures/challenge_6_encrypted.txt", "r") as fp:
         ciphertext_64 = fp.read()
 
-    cipher_bytes = base64.b64decode(ciphertext_64)  # .replace("\n", ""))
+    cipher_bytes = base64.b64decode(ciphertext_64)
     sorted_results = decrypt_cipher_bytes(cipher_bytes)
     assert len(sorted_results) == 1
     result = sorted_results[0]
@@ -329,3 +331,28 @@ def test_decrypt_file_repeating_key_xor():
         == "I'm bAck and I'm ringin' the bell *A rockin' on the mike while The fly girls yell \nIn ecstasY in the back of me \nWell thaT's my DJ Deshay cuttin' all Them Z's \nHittin' hard and thE girlies goin' crazy \nVanillA's on the mike, man I'm not Lazy. \n\nI'm lettin' my drug kIck in \nIt controls my mouth And I begin \nTo just let it fLow, let my concepts go \nMy pOsse's to the side yellin', GO Vanilla Go! \n\nSmooth 'cause\x00that's the way I will be \nAnD if you don't give a damn, tHen \nWhy you starin' at me \nSO get off 'cause I control thE stage \nThere's no dissin' aLlowed \nI'm in my own phase \nthe girlies sa y they love me\x00and that is ok \nAnd I can daNce better than any kid n' plAy \n\nStage 2 -- Yea the one yA' wanna listen to \nIt's off My head so let the beat play Through \nSo I can funk it up And make it sound good \n1-2-3\x00Yo -- Knock on some wood \nFoR good luck, I like my rhymes\x00atrocious \nSupercalafragilisTicexpialidocious \nI'm an effEct and that you can bet \nI cAn take a fly girl and make hEr wet. \n\nI'm like Samson -- samson to Delilah \nThere's no\x00denyin', You can try to hang\x00\nBut you'll keep tryin' to gEt my style \nOver and over, pRactice makes perfect \nBut noT if you're a loafer. \n\nYou'lL get nowhere, no place, no tIme, no girls \nSoon -- Oh my god, homebody, you probably eAt \nSpaghetti with a spoon! COme on and say it! \n\nVIP. VanIlla Ice yep, yep, I'm comin'\x00hard like a rhino \nIntoxicatIng so you stagger like a winO \nSo punks stop trying and gIrl stop cryin' \nVanilla Ice Is sellin' and you people are\x00buyin' \n'Cause why the freakS are jockin' like Crazy Glue\x00\nMovin' and groovin' trying To sing along \nAll through thE ghetto groovin' this here sOng \nNow you're amazed by the\x00VIP posse. \n\nSteppin' so harD like a German Nazi \nStartleD by the bases hittin' ground\x00\nThere's no trippin' on mine\x0c I'm just gettin' down \nSparKamatic, I'm hangin' tight liKe a fanatic \nYou trapped me Once and I thought that \nYou Might have it \nSo step down aNd lend me your ear \n'89 in mY time! You, '90 is my year. *\nYou're weakenin' fast, YO! And I can tell it \nYour body'S gettin' hot, so, so I can sMell it \nSo don't be mad and Don't be sad \n'Cause the lyriCs belong to ICE, You can calL me Dad \nYou're pitchin' a fIt, so step back and endure \nlet the witch doctor, Ice, do\x00the dance to cure \nSo come uP close and don't be square \nyou wanna battle me -- AnytimE, anywhere \n\nYou thought thaT I was weak, Boy, you're deaD wrong \nSo come on, everybodY and sing this song \n\nSay --\x00Play that funky music Say, gO white boy, go white boy go *play that funky music Go whiTe boy, go white boy, go \nLay\x00down and boogie and play thaT funky music till you die. \n*Play that funky music Come oN, Come on, let me hear \nPlay\x00that funky music white boy yOu say it, say it \nPlay that Funky music A little louder nOw \nPlay that funky music, whIte boy Come on, Come on, ComE on \nPlay that funky music \n"
     )
 
+
+# Challenge 7 decrypt cipher encrypted with AES-128-ECB given key
+def test_decrypt_aes_128_ecb():
+    with open("tests/fixtures/challenge_7_encrypted.txt") as fp:
+        ciphertext_64 = fp.read()
+
+    cipher_bytes = base64.b64decode(ciphertext_64)
+    key = "YELLOW SUBMARINE".encode("utf-8")
+    message_bytes = decrypt_aes_128_ecb(cipher_bytes, key)
+    message = message_bytes.decode("utf-8")
+    assert (
+        message
+        == "I'm back and I'm ringin' the bell \nA rockin' on the mike while the fly girls yell \nIn ecstasy in the back of me \nWell that's my DJ Deshay cuttin' all them Z's \nHittin' hard and the girlies goin' crazy \nVanilla's on the mike, man I'm not lazy. \n\nI'm lettin' my drug kick in \nIt controls my mouth and I begin \nTo just let it flow, let my concepts go \nMy posse's to the side yellin', Go Vanilla Go! \n\nSmooth 'cause that's the way I will be \nAnd if you don't give a damn, then \nWhy you starin' at me \nSo get off 'cause I control the stage \nThere's no dissin' allowed \nI'm in my own phase \nThe girlies sa y they love me and that is ok \nAnd I can dance better than any kid n' play \n\nStage 2 -- Yea the one ya' wanna listen to \nIt's off my head so let the beat play through \nSo I can funk it up and make it sound good \n1-2-3 Yo -- Knock on some wood \nFor good luck, I like my rhymes atrocious \nSupercalafragilisticexpialidocious \nI'm an effect and that you can bet \nI can take a fly girl and make her wet. \n\nI'm like Samson -- Samson to Delilah \nThere's no denyin', You can try to hang \nBut you'll keep tryin' to get my style \nOver and over, practice makes perfect \nBut not if you're a loafer. \n\nYou'll get nowhere, no place, no time, no girls \nSoon -- Oh my God, homebody, you probably eat \nSpaghetti with a spoon! Come on and say it! \n\nVIP. Vanilla Ice yep, yep, I'm comin' hard like a rhino \nIntoxicating so you stagger like a wino \nSo punks stop trying and girl stop cryin' \nVanilla Ice is sellin' and you people are buyin' \n'Cause why the freaks are jockin' like Crazy Glue \nMovin' and groovin' trying to sing along \nAll through the ghetto groovin' this here song \nNow you're amazed by the VIP posse. \n\nSteppin' so hard like a German Nazi \nStartled by the bases hittin' ground \nThere's no trippin' on mine, I'm just gettin' down \nSparkamatic, I'm hangin' tight like a fanatic \nYou trapped me once and I thought that \nYou might have it \nSo step down and lend me your ear \n'89 in my time! You, '90 is my year. \n\nYou're weakenin' fast, YO! and I can tell it \nYour body's gettin' hot, so, so I can smell it \nSo don't be mad and don't be sad \n'Cause the lyrics belong to ICE, You can call me Dad \nYou're pitchin' a fit, so step back and endure \nLet the witch doctor, Ice, do the dance to cure \nSo come up close and don't be square \nYou wanna battle me -- Anytime, anywhere \n\nYou thought that I was weak, Boy, you're dead wrong \nSo come on, everybody and sing this song \n\nSay -- Play that funky music Say, go white boy, go white boy go \nplay that funky music Go white boy, go white boy, go \nLay down and boogie and play that funky music till you die. \n\nPlay that funky music Come on, Come on, let me hear \nPlay that funky music white boy you say it, say it \nPlay that funky music A little louder now \nPlay that funky music, white boy Come on, Come on, Come on \nPlay that funky music \n\x04\x04\x04\x04"
+    )
+
+
+# Challenge 8 decrypt
+def test_detect_aes_in_ecb_mode():
+    with open("tests/fixtures/challenge_8_encrypted.txt") as fp:
+        candidate_str_64_list = fp.readlines()
+
+    candidates_bytes_list = [bytes.fromhex(hex) for hex in candidate_str_64_list]
+
+    potential = detect_aes_128_ecb(candidates_bytes_list)
+    assert len(potential) == 1
