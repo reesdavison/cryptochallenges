@@ -269,13 +269,21 @@ class EditDistResult:
     dist: float
 
 
-def blocks(cipher: bytes, key_size: int) -> t.Generator[bytes, None, None]:
-    """Return cipher split into blocks. Do not"""
-    cipher_len = len(cipher)
+def blocks(_bytes: bytes, size: int) -> t.Generator[bytes, None, None]:
+    """Return _bytes split into blocks."""
+    length = len(_bytes)
     i = 0
-    while i + key_size < cipher_len:
-        yield cipher[i : i + key_size]
-        i += key_size
+    while i + size < length:
+        yield _bytes[i : i + size]
+        i += size
+
+
+def reverse_blocks(_bytes: bytes, size: int) -> t.Generator[bytes, None, None]:
+    length = len(_bytes)
+    i = length
+    while i - size >= 0:
+        yield _bytes[i - size : i]
+        i -= size
 
 
 def norm_edit_distance(cipher: bytes, key_size: int):
@@ -366,6 +374,13 @@ def decrypt_aes_128_ecb(cipher_text: bytes, key: bytes) -> bytes:
     return message
 
 
+def encrypt_aes_128_ecb(message: bytes, key: bytes) -> bytes:
+    cipher = Cipher(algorithms.AES128(key), modes.ECB())
+    encryptor = cipher.encryptor()
+    cipher_text = encryptor.update(message) + encryptor.finalize()
+    return cipher_text
+
+
 # because ECB returns the same code for the same 16 byte input
 # if we split the text into 16 bytes and measure repetition...
 # but 16 bytes is 16 characters in ascii. How many sequences of letters
@@ -386,3 +401,66 @@ def detect_aes_128_ecb(cipher_candidates: t.List[bytes]):
             potential_ecb_mode.append(i)
 
     return potential_ecb_mode
+
+
+def encrypt_aes_128_cbc(message: bytes, key: bytes, iv: bytes) -> bytes:
+    """Encrypt using XOR function in CBC mode
+
+    Parameters
+    ----------
+    message : bytes
+        Message in bytes to be encrypted
+    iv : bytes
+        Initialisation vector to begin CBC mode
+    key : bytes
+        encryption key
+    bytes_block_size : int, optional
+        number of bytes for each xor encryption step, by default 16
+
+    Returns
+    -------
+    bytes
+        Ciphertext
+    """
+    block_func = encrypt_aes_128_ecb
+    previous = iv
+    encrypted_blocks = []
+    for block in blocks(message, size=16):
+        previous = block_func(xor_bytes(previous, block), key)
+        encrypted_blocks.append(previous)
+    return b"".join(encrypted_blocks)
+
+
+"""
+encryption
+next = aes_en(prev ^ msg_block, key)
+
+aes_de(next, key) = prev ^ msg_block
+
+decryption:
+msg_block = aes_de(next, key) ^ prev
+
+"""
+
+
+def decrypt_aes_128_cbc(
+    cipher_bytes: bytes,
+    key: bytes,
+    iv: t.Optional[bytes] = None,
+) -> bytes:
+    bytes_block_size = 16
+
+    if iv is None:
+        iv = b"0" * bytes_block_size
+
+    block_func = decrypt_aes_128_ecb
+
+    decrypted_blocks = []
+    previous = iv
+    # this can be parallelised
+    for block in blocks(cipher_bytes, size=16):
+        decrypted = xor_bytes(block_func(block, key), previous)
+        decrypted_blocks.append(decrypted)
+        previous = block
+
+    return b"".join(decrypted_blocks)
