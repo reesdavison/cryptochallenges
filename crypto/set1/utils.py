@@ -1,7 +1,10 @@
 import base64
+import os
+import random
 import typing as t
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import partial
 from itertools import product
 from math import ceil
 
@@ -278,6 +281,10 @@ def blocks(_bytes: bytes, size: int) -> t.Generator[bytes, None, None]:
         i += size
 
 
+def get_block(_bytes: bytes, size: int, block_num: int) -> bytes:
+    return _bytes[size * block_num: size * (block_num + 1)]
+
+
 def reverse_blocks(_bytes: bytes, size: int) -> t.Generator[bytes, None, None]:
     length = len(_bytes)
     i = length
@@ -367,14 +374,14 @@ def decrypt_cipher_bytes(cipher: bytes) -> None:
     return sorted_results
 
 
-def decrypt_aes_128_ecb(cipher_text: bytes, key: bytes) -> bytes:
+def decrypt_aes_128(cipher_text: bytes, key: bytes) -> bytes:
     cipher = Cipher(algorithms.AES128(key), modes.ECB())
     decryptor = cipher.decryptor()
     message = decryptor.update(cipher_text) + decryptor.finalize()
     return message
 
 
-def encrypt_aes_128_ecb(message: bytes, key: bytes) -> bytes:
+def encrypt_aes_128(message: bytes, key: bytes) -> bytes:
     cipher = Cipher(algorithms.AES128(key), modes.ECB())
     encryptor = cipher.encryptor()
     cipher_text = encryptor.update(message) + encryptor.finalize()
@@ -382,14 +389,15 @@ def encrypt_aes_128_ecb(message: bytes, key: bytes) -> bytes:
 
 
 # because ECB returns the same code for the same 16 byte input
-# if we split the text into 16 bytes and measure repetition...
-# but 16 bytes is 16 characters in ascii. How many sequences of letters
+# if we split the text into 16 bytes or less and measure repetition...
+# 16 bytes is 16 characters in ascii. How many sequences of letters
 # are likely to be 16 length long.
 # lets do this first and check our assumption we don't get much of
 # a distribution and this is more complicated.
 # it turns out we do only get 1 result. If the secret is large I
 # suppose its likely there are repetition, but in this case its probably
 # just an easy case.
+# the method works better if we split into smaller numbers of bytes
 def detect_aes_128_ecb(cipher_candidates: t.List[bytes]):
     potential_ecb_mode = []
 
@@ -403,8 +411,54 @@ def detect_aes_128_ecb(cipher_candidates: t.List[bytes]):
     return potential_ecb_mode
 
 
+def encrypt_aes_128_ecb(message: bytes, key: bytes) -> bytes:
+    """Encrypt using AES 128 in ECB mode
+
+    Parameters
+    ----------
+    message : bytes
+        Message in bytes to be encrypted
+    key : bytes
+        encryption key
+
+    Returns
+    -------
+    bytes
+        Ciphertext
+    """
+    block_func = encrypt_aes_128
+    encrypted_blocks = []
+    for block in blocks(message, size=16):
+        previous = block_func(block, key)
+        encrypted_blocks.append(previous)
+    return b"".join(encrypted_blocks)
+
+
+def decrypt_aes_128_ecb(message: bytes, key: bytes) -> bytes:
+    """Decrypt using AES 128 in ECB mode
+
+    Parameters
+    ----------
+    message : bytes
+        Message in bytes to be encrypted
+    key : bytes
+        encryption key
+
+    Returns
+    -------
+    bytes
+        Ciphertext
+    """
+    block_func = decrypt_aes_128
+    decrypted_blocks = []
+    for block in blocks(message, size=16):
+        previous = block_func(block, key)
+        decrypted_blocks.append(previous)
+    return b"".join(decrypted_blocks)
+
+
 def encrypt_aes_128_cbc(message: bytes, key: bytes, iv: bytes) -> bytes:
-    """Encrypt using XOR function in CBC mode
+    """Encrypt using AES 128 in CBC mode
 
     Parameters
     ----------
@@ -422,7 +476,7 @@ def encrypt_aes_128_cbc(message: bytes, key: bytes, iv: bytes) -> bytes:
     bytes
         Ciphertext
     """
-    block_func = encrypt_aes_128_ecb
+    block_func = encrypt_aes_128
     previous = iv
     encrypted_blocks = []
     for block in blocks(message, size=16):
@@ -448,12 +502,13 @@ def decrypt_aes_128_cbc(
     key: bytes,
     iv: t.Optional[bytes] = None,
 ) -> bytes:
+    """Decrypt using AES 128 in CBC mode"""
     bytes_block_size = 16
 
     if iv is None:
         iv = b"0" * bytes_block_size
 
-    block_func = decrypt_aes_128_ecb
+    block_func = decrypt_aes_128
 
     decrypted_blocks = []
     previous = iv
@@ -464,3 +519,46 @@ def decrypt_aes_128_cbc(
         previous = block
 
     return b"".join(decrypted_blocks)
+
+
+def rand_bytes(size: int = 16) -> bytes:
+    return os.urandom(size)
+
+
+def encryption_oracle(
+    message: bytes,
+    key: bytes,
+    choice_override: t.Optional[t.Literal["ecb", "cbc"]] = None,
+    use_rand_bytes: bool = True,
+) -> bytes:
+    if use_rand_bytes:
+        start_num = random.randint(5, 10)
+        end_num = random.randint(5, 10)
+        message = rand_bytes(start_num) + message + rand_bytes(end_num)
+
+    func = None
+    options = ("ecb", "cbc")
+    if choice_override is None:
+        choice = options[random.randint(0, 1)]
+    else:
+        choice = choice_override
+
+    if choice == "cbc":
+
+        def encrypt_aes_128_cbc_rand_iv(_message: bytes, _key: bytes) -> bytes:
+            return encrypt_aes_128_cbc(_message, _key, iv=rand_bytes(16))
+
+        func = encrypt_aes_128_cbc_rand_iv
+    elif choice == "ecb":
+        func = encrypt_aes_128_ecb
+    else:
+        raise AssertionError("Must be cbc or ecb")
+
+    return func(message, key)
+
+
+def detect_block_cipher_mode(cipher_text: bytes) -> t.Literal["ecb", "cbc"]:
+    poss_list = detect_aes_128_ecb([cipher_text])
+    if len(poss_list) > 0:
+        return "ecb"
+    return "cbc"
