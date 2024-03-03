@@ -123,16 +123,16 @@ def test_byte_at_a_time_ecb_decryption_simple():
 
     # so get_byte_dict needs to take all the previous 7 letters padded with A's if less
 
-    # get_byte_dict(seven_bytes="AAAA,AAA") -> 7A's block0, H
-    # get_byte_dict(seven_bytes="AAAA,AAH") -> 6A's block0, E
-    # get_byte_dict(seven_bytes="AAAA,AHE") -> 5A's block0, L
-    # get_byte_dict(seven_bytes="AAAA,HEL") -> 4A's block0, L
-    # get_byte_dict(seven_bytes="AAAH,ELL") -> 3A's block0, O
-    # get_byte_dict(seven_bytes="AAHE,LLO") -> 2A's block0, W
-    # get_byte_dict(seven_bytes="AHEL,LOW") -> 1A's block0, O
-    # get_byte_dict(seven_bytes="HELL,OWO") -> 0A's block0, R
-    # get_byte_dict(seven_bytes="ELLO,WOR") -> 7A's block1, L
-    # get_byte_dict(seven_bytes="LLOW,ORL") -> 6A's block1, D
+    # get_byte_dict(prefix="AAAA,AAA") -> 7A's block0, H
+    # get_byte_dict(prefix="AAAA,AAH") -> 6A's block0, E
+    # get_byte_dict(prefix="AAAA,AHE") -> 5A's block0, L
+    # get_byte_dict(prefix="AAAA,HEL") -> 4A's block0, L
+    # get_byte_dict(prefix="AAAH,ELL") -> 3A's block0, O
+    # get_byte_dict(prefix="AAHE,LLO") -> 2A's block0, W
+    # get_byte_dict(prefix="AHEL,LOW") -> 1A's block0, O
+    # get_byte_dict(prefix="HELL,OWO") -> 0A's block0, R
+    # get_byte_dict(prefix="ELLO,WOR") -> 7A's block1, L
+    # get_byte_dict(prefix="LLOW,ORL") -> 6A's block1, D
 
     block_size = 16
 
@@ -195,3 +195,107 @@ def test_byte_at_a_time_ecb_decryption_simple():
         "Did you stop? No, I just drove by"
     )
     assert message.decode() == correct
+
+
+# Challenge 14
+def test_byte_at_a_time_ecb_decryption_hard():
+    unknown = "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK"
+    unknown_bytes = base64.urlsafe_b64decode(unknown)
+
+    key = b"YELLOW SUBMARINE"
+    block_size = 16
+
+    # in our message through oracle function we have
+    # 5-10rand bytes + mymessage + unknownmessage + 5-10rand bytes
+    # On each round we need to determine where to start
+
+    # design for 7 random bytes
+    # use this prefix
+    # ????,???A,BCDE,FGHI JKLM,NOPQ,RSTU,VWXY JKLM,NOPQ,RSTU,VWXY
+    # if byte_1 == byte_2 we're good, reject otherwise
+
+    # in 11 random bytes case
+    # ????,????,???A,BCDE FGHI,JKLM,NOPQ,RSTU VWXY,JKLM,NOPQ,RSTU VWXY
+
+    # from byte 3 code becomes same as before once we've confirmed
+    # byte1 == byte2
+    # AAAA,AAAA,AAAA,AAAH
+    # AAAA,AAAA,AAAA,AAHE
+
+    INITIAL_PREFIX = b"ABCDEFGHI" + (b"JKLMNOPQRSTUVWXY" * 2)
+    assert len(INITIAL_PREFIX) == block_size * 2 + block_size - 7
+
+    def get_next_byte(num_a: int, check_block: int, byte_dict: dict) -> Optional[bytes]:
+        crafted_input = b"A" * num_a
+        while True:
+            cipher_text = encryption_oracle(
+                message=INITIAL_PREFIX + crafted_input + unknown_bytes,
+                key=key,
+                choice_override="ecb",
+                use_rand_bytes=True,
+            )
+            block1 = get_block(cipher_text, size=block_size, block_num=1)
+            block2 = get_block(cipher_text, size=block_size, block_num=2)
+            if block1 == block2:
+                try:
+                    block = get_block(
+                        cipher_text, size=block_size, block_num=3 + check_block
+                    )
+                    char = byte_dict[block]
+                    return char
+                except KeyError:
+                    return None
+
+    def get_byte_dict(prefix: bytes) -> dict:
+        byte_dict = {}
+        assert len(prefix) == block_size - 1
+        for i in range(256):
+            while True:
+                test_byte = int.to_bytes(i, length=1, byteorder="big")
+                crafted_input = INITIAL_PREFIX + prefix + test_byte
+                cipher_text = encryption_oracle(
+                    message=crafted_input + unknown_bytes,
+                    key=key,
+                    choice_override="ecb",
+                    use_rand_bytes=True,
+                )
+                block1 = get_block(cipher_text, size=block_size, block_num=1)
+                block2 = get_block(cipher_text, size=block_size, block_num=2)
+                if block1 == block2:
+                    byte_dict[get_block(cipher_text, size=block_size, block_num=3)] = (
+                        test_byte
+                    )
+                    break
+        assert len(byte_dict) == 256
+        return byte_dict
+
+    prefix = b"A" * (block_size - 1)
+
+    num_a = block_size - 1
+    check_block = 0
+    message = b""
+
+    while True:
+        byte_dict = get_byte_dict(prefix=prefix)
+        next_byte = get_next_byte(
+            num_a=num_a, check_block=check_block, byte_dict=byte_dict
+        )
+        if next_byte is None:
+            break
+
+        message += next_byte
+        num_a -= 1
+        prefix = prefix[1:] + next_byte
+        print(message.decode())
+
+        if num_a == -1:
+            num_a = block_size - 1
+            check_block += 1
+
+    correct = (
+        "Rollin' in my 5.0\n"
+        "With my rag-top down so my hair can blow\n"
+        "The girlies on standby waving just to say hi\n"
+        "Did you stop? No, I just drove by"
+    )
+    assert correct in message.decode()

@@ -282,7 +282,7 @@ def blocks(_bytes: bytes, size: int) -> t.Generator[bytes, None, None]:
 
 
 def get_block(_bytes: bytes, size: int, block_num: int) -> bytes:
-    return _bytes[size * block_num: size * (block_num + 1)]
+    return _bytes[size * block_num : size * (block_num + 1)]
 
 
 def reverse_blocks(_bytes: bytes, size: int) -> t.Generator[bytes, None, None]:
